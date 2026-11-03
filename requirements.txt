@@ -1,0 +1,9 @@
+google-genai
+openai
+psycopg[binary]
+pgvector
+pydantic
+pydantic-settings
+pyyaml
+rapidfuzz
+streamlit
