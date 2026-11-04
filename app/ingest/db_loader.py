@@ -28,7 +28,7 @@ def insert_rows(cursor: psycopg.Cursor, table: str, rows: list[BaseModel]) -> No
 
 def load_database(conninfo: str, tables: dict[str, list[BaseModel]]) -> None:
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
-    with psycopg.connect(conninfo) as conn:
+    with psycopg.connect(conninfo, connect_timeout=5) as conn:
         with conn.cursor() as cursor:
             cursor.execute(schema)
             for table, rows in tables.items():
