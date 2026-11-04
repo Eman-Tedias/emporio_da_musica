@@ -4,12 +4,12 @@ set -e
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     CREATE EXTENSION IF NOT EXISTS vector;
 
-    CREATE ROLE agente_leitura LOGIN PASSWORD '$AGENTE_DB_PASSWORD';
-    CREATE ROLE app_historico  LOGIN PASSWORD '$HISTORICO_DB_PASSWORD';
+    CREATE ROLE agent_reader LOGIN PASSWORD '$AGENT_DB_PASSWORD';
+    CREATE ROLE history_writer  LOGIN PASSWORD '$HISTORY_DB_PASSWORD';
 
-    GRANT CONNECT ON DATABASE "$POSTGRES_DB" TO agente_leitura, app_historico;
-    GRANT USAGE ON SCHEMA public TO agente_leitura, app_historico;
+    GRANT CONNECT ON DATABASE "$POSTGRES_DB" TO agent_reader, history_writer;
+    GRANT USAGE ON SCHEMA public TO agent_reader, history_writer;
 
     ALTER DEFAULT PRIVILEGES FOR ROLE "$POSTGRES_USER" IN SCHEMA public
-        GRANT SELECT ON TABLES TO agente_leitura;
+        GRANT SELECT ON TABLES TO agent_reader;
 EOSQL

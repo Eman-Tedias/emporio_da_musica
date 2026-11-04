@@ -4,6 +4,7 @@ psycopg[binary]
 pgvector
 pydantic
 pydantic-settings
+pytest
 pyyaml
 rapidfuzz
 streamlit
