@@ -1,4 +1,4 @@
-DROP FUNCTION IF EXISTS consultar_pedido_autorizado(INT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS get_authorized_order(INT, TEXT, TEXT);
 DROP TABLE IF EXISTS order_items, orders, promotions, products, categories, customers CASCADE;
 
 CREATE TABLE categories (
@@ -55,17 +55,17 @@ CREATE TABLE order_items (
     PRIMARY KEY (order_id, product_id)
 );
 
-CREATE FUNCTION consultar_pedido_autorizado(p_order_id INT, p_email TEXT, p_phone_digits TEXT)
+CREATE FUNCTION get_authorized_order(p_order_id INT, p_email TEXT, p_phone_digits TEXT)
 RETURNS TABLE (
     order_id INT, order_date DATE, status TEXT, total_brl NUMERIC,
     payment_method TEXT, tracking_code TEXT, estimated_delivery DATE,
-    notes TEXT, itens JSONB
+    notes TEXT, items JSONB
 )
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
 AS $$
     SELECT o.order_id, o.order_date, o.status, o.total_brl, o.payment_method,
            o.tracking_code, o.estimated_delivery, o.notes,
-           (SELECT jsonb_agg(jsonb_build_object('produto', p.name, 'quantidade', i.quantity))
+           (SELECT jsonb_agg(jsonb_build_object('product', p.name, 'quantity', i.quantity))
               FROM order_items i JOIN products p ON p.product_id = i.product_id
              WHERE i.order_id = o.order_id)
       FROM orders o
@@ -74,6 +74,6 @@ AS $$
        AND (lower(c.email) = lower(p_email) OR c.phone_digits = p_phone_digits);
 $$;
 
-REVOKE SELECT ON customers, orders, order_items FROM agente_leitura;
-REVOKE ALL ON FUNCTION consultar_pedido_autorizado(INT, TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION consultar_pedido_autorizado(INT, TEXT, TEXT) TO agente_leitura;
+REVOKE SELECT ON customers, orders, order_items FROM agent_reader;
+REVOKE ALL ON FUNCTION get_authorized_order(INT, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION get_authorized_order(INT, TEXT, TEXT) TO agent_reader;
