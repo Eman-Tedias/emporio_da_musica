@@ -6,5 +6,6 @@ pydantic
 pydantic-settings
 pytest
 pyyaml
+pymupdf4llm
 rapidfuzz
 streamlit

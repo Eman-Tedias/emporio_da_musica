@@ -1,0 +1,16 @@
+[
+  {"id": "g01", "category": "prior_knowledge_trap", "question": "Comprei na loja física e me arrependi, posso devolver em 7 dias?", "expected_answer": "O direito de arrependimento de 7 dias vale para compras online. Para compra presencial, a troca por preferência é permitida em até 7 dias, mediante disponibilidade e com o produto em perfeito estado.", "must_abstain": false},
+  {"id": "g02", "category": "prior_knowledge_trap", "question": "O frete pra Dourados é grátis acima de R$ 500?", "expected_answer": "Não. O frete grátis acima de R$ 500 vale só para a região metropolitana de Campo Grande. Para outras cidades, o frete é calculado pelo CEP.", "must_abstain": false},
+  {"id": "g03", "category": "prior_knowledge_trap", "question": "Na Black Friday de vocês o desconto chega a 50%?", "expected_answer": "Não. Na Black Friday os descontos vão de 15% a 30%.", "must_abstain": false},
+  {"id": "g04", "category": "prior_knowledge_trap", "question": "Com defeito depois de 40 dias da compra, a loja troca o produto?", "expected_answer": "Após 30 dias, a troca não é feita pela loja: o cliente aciona a garantia do fabricante, e a loja pode intermediar.", "must_abstain": false},
+  {"id": "g05", "category": "grounded", "question": "Qual o prazo de garantia dos instrumentos?", "expected_answer": "Garantia legal de 90 dias contra defeitos de fabricação, e garantia do fabricante que varia de 6 meses a 2 anos, conforme o certificado.", "must_abstain": false},
+  {"id": "g06", "category": "grounded", "question": "Em quanto tempo sai o reembolso de uma devolução?", "expected_answer": "Em até 10 dias úteis, na mesma forma de pagamento original.", "must_abstain": false},
+  {"id": "g07", "category": "grounded", "question": "Posso trocar a boquilha do clarinete que comprei?", "expected_answer": "Não. Boquilhas de instrumentos de sopro não são elegíveis para troca, por questões de higiene.", "must_abstain": false},
+  {"id": "g08", "category": "grounded", "question": "Qual o WhatsApp da loja?", "expected_answer": "O manual informa (67) 3341-4444 nos dados da empresa e (67) 3321-4500 na seção de atendimento via WhatsApp.", "must_abstain": false},
+  {"id": "g09", "category": "grounded", "question": "Vocês aceitam bitcoin?", "expected_answer": "As formas aceitas são PIX, cartão de débito, cartão de crédito e boleto. Bitcoin não está entre elas.", "must_abstain": false},
+  {"id": "g10", "category": "unanswerable", "question": "Tem estacionamento na loja?", "expected_answer": null, "must_abstain": true},
+  {"id": "g11", "category": "unanswerable", "question": "Vocês fazem setup e regulagem de instrumentos?", "expected_answer": null, "must_abstain": true},
+  {"id": "g12", "category": "unanswerable", "question": "Qual o nome do gerente?", "expected_answer": null, "must_abstain": true},
+  {"id": "g13", "category": "out_of_scope", "question": "Vocês vendem amplificador?", "expected_answer": "A loja trabalha exclusivamente com instrumentos musicais e não vende acessórios como amplificadores.", "must_abstain": false},
+  {"id": "g14", "category": "out_of_scope", "question": "Qual a capital da França?", "expected_answer": null, "must_abstain": true}
+]
