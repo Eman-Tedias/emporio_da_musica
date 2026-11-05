@@ -1,5 +1,6 @@
 """Chat interface. Run with: streamlit run app/ui/streamlit_app.py (the API must be running)."""
 import os
+import re
 
 import httpx
 import streamlit as st
@@ -7,7 +8,18 @@ import streamlit as st
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 WELCOME = "Oi! Sou o assistente virtual da Empório da Música. Posso ajudar com produtos, pedidos e políticas da loja."
 
+MARKDOWN_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~<$])")
+
 st.set_page_config(page_title="Empório da Música")
+
+
+def show(role: str, content: str) -> None:
+    # Streamlit renders text between two "$" as LaTeX, so "R$ 10 ou R$ 20" would turn into a formula.
+    # Assistant answers keep their Markdown (bold, lists); customer text is shown literally.
+    if role == "user":
+        st.markdown(MARKDOWN_SPECIAL.sub(r"\\\1", content))
+    else:
+        st.markdown(content.replace("$", r"\$"))
 
 
 def reset() -> None:
@@ -50,15 +62,15 @@ st.title("Atendimento")
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        show(message["role"], message["content"])
 
 if prompt := st.chat_input("Digite sua mensagem"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        show("user", prompt)
     with st.chat_message("assistant"):
         with st.spinner("Consultando..."):
             answer = ask(prompt)
-        st.markdown(answer)
+        show("assistant", answer)
     st.session_state.messages.append({"role": "assistant", "content": answer})
     st.rerun()

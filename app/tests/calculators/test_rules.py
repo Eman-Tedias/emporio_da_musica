@@ -85,3 +85,10 @@ def test_defect_within_thirty_days():
 
 def test_defect_after_thirty_days_is_not_eligible():
     assert not check_return_eligibility("defect", date(2026, 3, 1), date(2026, 4, 1)).eligible
+
+
+def test_installment_options_list_only_allowed_plans():
+    from app.calculators.rules import installment_options
+    options = installment_options(D("500"))
+    assert [plan.installments for plan in options] == [1, 2, 3, 4, 5, 6]
+    assert options[-1].installment_value == D("83.33")

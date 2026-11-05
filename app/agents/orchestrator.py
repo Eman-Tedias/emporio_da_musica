@@ -167,7 +167,8 @@ class Orchestrator:
             trace["error"] = str(error)
             return TurnResult(self.policy.replies.unsupported_answer)
 
-        evidence: list = []
+        # Values the customer typed ("tenho R$ 2.000") may be repeated in the answer
+        evidence: list = [text]
         retrieved_sections: list[str] = []
         if "data" in results:
             data = results["data"]

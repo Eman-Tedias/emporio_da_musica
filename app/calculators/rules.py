@@ -88,6 +88,10 @@ def max_installments(total: Decimal) -> int:
     return max(allowed)
 
 
+def installment_options(total: Decimal) -> list[InstallmentPlan]:
+    return [plan for n in range(1, MAX_INSTALLMENTS + 1) if (plan := simulate_installments(total, n)).allowed]
+
+
 @dataclass(frozen=True)
 class ShippingQuote:
     fee: Decimal | None

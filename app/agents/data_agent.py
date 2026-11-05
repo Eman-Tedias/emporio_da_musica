@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agents.prompts import DATA_AGENT
 from app.agents.delimiters import Delimiter
-from app.calculators.rules import shipping_quote, simulate_installments
+from app.calculators.rules import installment_options, shipping_quote, simulate_installments
 from app.llm.client import CallInfo, LLMClient
 from app.observability import observe, update
 from app.tools.calculate import calculate
@@ -40,6 +40,10 @@ class InstallmentsArgs(StrictArgs):
     installments: int = Field(ge=1, le=24)
 
 
+class InstallmentOptionsArgs(StrictArgs):
+    total: Decimal = Field(gt=0)
+
+
 class ShippingArgs(StrictArgs):
     order_total: Decimal = Field(gt=0)
     city: str = Field(max_length=80)
@@ -59,6 +63,8 @@ TOOLS = {
     "list_categories": (NoArgs, lambda a: list_categories()),
     "list_active_promotions": (NoArgs, lambda a: list_active_promotions()),
     "simulate_installments": (InstallmentsArgs, lambda a: simulate_installments(a.total, a.installments)),
+    "installment_options": (InstallmentOptionsArgs,
+                            lambda a: {"total": a.total, "options": [asdict(p) for p in installment_options(a.total)]}),
     "shipping_quote": (ShippingArgs, lambda a: shipping_quote(a.order_total, a.city)),
     "calculate": (CalculateArgs, lambda a: {"expression": a.expression, "result": calculate(a.expression)}),
 }
@@ -77,9 +83,13 @@ TOOL_SPECS = [
      "parameters": {"type": "object", "properties": {}}},
     {"name": "list_active_promotions", "description": "Products with an active promotion and their prices.",
      "parameters": {"type": "object", "properties": {}}},
-    {"name": "simulate_installments", "description": "Checks an installment plan against the store minimums.",
+    {"name": "simulate_installments", "description": "Checks one specific installment count the customer "
+        "asked for (e.g. 10x) against the store minimums.",
      "parameters": {"type": "object", "properties": {"total": NUMBER, "installments": INTEGER},
                     "required": ["total", "installments"]}},
+    {"name": "installment_options", "description": "Every allowed installment plan (count and value) for a "
+        "total, in one call. Use it when the customer asks how they can pay in installments.",
+     "parameters": {"type": "object", "properties": {"total": NUMBER}, "required": ["total"]}},
     {"name": "shipping_quote", "description": "Shipping fee and delivery time for an order total and city.",
      "parameters": {"type": "object", "properties": {"order_total": NUMBER, "city": STRING},
                     "required": ["order_total", "city"]}},
