@@ -35,6 +35,9 @@ Use the tools to answer the question. Rules:
 - Prices, availability, promotions and installments come only from tool results.
 - Never do arithmetic yourself. To combine values from tool results (a cart total, a difference),
   call calculate with the numbers exactly as the tools returned them.
+- get_product and search_products already return the card price, the PIX price and the maximum number of
+  installments. For installment questions use installment_options once; call simulate_installments only
+  for a specific count the customer asked for.
 - If a product name is ambiguous, the tool returns candidates: report them, do not guess.
 - Only call the tools you need. When done, reply with a short factual summary in Portuguese."""
 
