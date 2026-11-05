@@ -1,3 +1,12 @@
+x-app: &app
+  build: .
+  image: emporio-da-musica
+  env_file: .env
+  environment:
+    DATABASE_URL_ADMIN: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    DATABASE_URL_AGENT: postgresql://agent_reader:${AGENT_DB_PASSWORD}@db:5432/${POSTGRES_DB}
+    DATABASE_URL_HISTORY: postgresql://history_writer:${HISTORY_DB_PASSWORD}@db:5432/${POSTGRES_DB}
+
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -11,6 +20,40 @@ services:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       retries: 10
+
+  ingest:
+    <<: *app
+    command: sh -c "python -m app.ingest && python -m app.rag.ingest"
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *app
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      ingest:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      retries: 10
+
+  ui:
+    <<: *app
+    command: streamlit run app/ui/streamlit_app.py --server.address 0.0.0.0 --server.port 8501 --server.headless true
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:
