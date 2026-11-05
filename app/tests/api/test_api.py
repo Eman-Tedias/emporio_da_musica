@@ -12,7 +12,7 @@ class FakeOrchestrator:
     def __init__(self):
         self.sessions = []
 
-    def handle(self, message, session):
+    def handle(self, message, session, session_id=None):
         self.sessions.append(session)
         session.add_credential("EMAIL", "real@jmail.com")
         return TurnResult(f"eco: {message}", {"parsed": {"rewritten_question": "[EMAIL_1]"}})

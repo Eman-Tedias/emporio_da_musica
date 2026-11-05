@@ -1,6 +1,7 @@
 import psycopg
 
 from app.config import get_settings
+from app.observability import flush
 from app.rag.chunker import Chunk, chunk_pdf
 from app.rag.embeddings import embed_texts, to_pgvector
 
@@ -49,6 +50,7 @@ def main() -> None:
     for chunk in chunks:
         print(f"{chunk.title} (pages {chunk.pages}, {len(chunk.pieces_for_embedding)} pieces)")
     print(f"{len(chunks)} sections and {total} pieces loaded")
+    flush()
 
 
 if __name__ == "__main__":

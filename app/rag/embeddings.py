@@ -3,6 +3,8 @@ from functools import lru_cache
 from openai import OpenAI
 
 from app.config import get_settings
+from app.llm.pricing import cost_usd
+from app.observability import observe, update
 
 
 @lru_cache
@@ -11,9 +13,12 @@ def get_openai_client() -> OpenAI:
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    response = get_openai_client().embeddings.create(
-        model=get_settings().embedding_model, input=texts
-    )
+    model = get_settings().embedding_model
+    trace_input = texts[0] if len(texts) == 1 else f"{len(texts)} texts"
+    with observe("embedding", as_type="embedding", model=model, input=trace_input) as embedding:
+        response = get_openai_client().embeddings.create(model=model, input=texts)
+        tokens = response.usage.prompt_tokens if response.usage else 0
+        update(embedding, usage_details={"input": tokens}, cost_details=cost_usd(model, tokens, 0))
     return [item.embedding for item in response.data]
 
 

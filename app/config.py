@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     max_messages_per_minute: int = 20
     session_idle_ttl_seconds: int = 3600
     trace_file: str = "logs/traces.jsonl"
+    log_level: str = "INFO"
+    langfuse_enabled: bool = True
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
+    langfuse_base_url: str = "https://cloud.langfuse.com"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     data_dir: Path = Path("data")
 

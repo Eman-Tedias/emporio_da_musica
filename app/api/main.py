@@ -1,6 +1,7 @@
 import json
 import logging
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -12,6 +13,7 @@ from app.agents.orchestrator import Orchestrator
 from app.api.sessions import SessionStore
 from app.config import get_settings
 from app.llm.client import get_llm_client
+from app.observability import configure_logging, flush
 
 logger = logging.getLogger("emporio.api")
 _trace_lock = threading.Lock()
@@ -49,7 +51,14 @@ def write_trace(session_id: str, trace: dict) -> None:
         file.write(line + "\n")
 
 
-app = FastAPI(title="Empório da Música - atendimento")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    configure_logging()
+    yield
+    flush()
+
+
+app = FastAPI(title="Empório da Música - atendimento", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -66,7 +75,7 @@ def chat(
     session_id, stored = sessions.get_or_create(request.session_id)
     if not sessions.allow(stored):
         raise HTTPException(status_code=429, detail="Muitas mensagens em pouco tempo. Aguarde um minuto.")
-    result = orchestrator.handle(request.message, stored.state)
+    result = orchestrator.handle(request.message, stored.state, session_id=session_id)
     try:
         write_trace(session_id, result.trace)
     except OSError:
