@@ -1,8 +1,11 @@
+import contextvars
 import json
+import logging
 import re
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -17,8 +20,11 @@ from app.guardrails.output import check_output
 from app.guardrails.policy import load_policy
 from app.guardrails.session import SessionState
 from app.llm.client import LLMClient, LLMUnavailable
+from app.observability import observe, session_trace, update
 from app.rag.retriever import search_policies
 from app.tools.orders import get_order
+
+logger = logging.getLogger("emporio.orchestrator")
 
 STORE_TIMEZONE = ZoneInfo("America/Campo_Grande")
 
@@ -46,6 +52,21 @@ def _history_text(session: SessionState, turns: int) -> str:
     return "\n".join(lines) or "(no previous messages)"
 
 
+def _submit(pool: ThreadPoolExecutor, fn, *args):
+    # Each thread gets a copy of the current context, so its observations nest under the turn
+    return pool.submit(contextvars.copy_context().run, fn, *args)
+
+
+@contextmanager
+def _stage(trace: dict, name: str, as_type: str = "span", **attributes):
+    start = time.perf_counter()
+    try:
+        with observe(name, as_type=as_type, **attributes) as observation:
+            yield observation
+    finally:
+        trace["timings"][name] = round(time.perf_counter() - start, 3)
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -60,36 +81,58 @@ class Orchestrator:
         self.settings = get_settings()
         self.policy = load_policy()
 
-    def handle(self, message: str, session: SessionState) -> TurnResult:
+    def handle(self, message: str, session: SessionState, session_id: str | None = None) -> TurnResult:
         start = time.perf_counter()
-        trace: dict = {"steps": []}
-        result = self._handle(message, session, trace)
-        trace["seconds"] = round(time.perf_counter() - start, 2)
+        trace: dict = {"steps": [], "timings": {}}
+        with session_trace(session_id), observe("turn", as_type="agent") as turn:
+            result = self._handle(message, session, trace)
+            trace["seconds"] = round(time.perf_counter() - start, 2)
+            trace["timings"]["total"] = trace["seconds"]
+            trace["cost_usd"] = round(sum(s.get("cost_usd") or 0 for s in trace["steps"]), 6)
+            update(turn, input=trace.get("masked_message"), output=result.answer,
+                   metadata={"timings": trace["timings"], "blocked": trace.get("blocked"),
+                             "intents": (trace.get("parsed") or {}).get("intents")})
         session.history.append({"role": "assistant", "text": result.answer})
         result.trace = trace
+        self._log(trace, session_id)
         return result
+
+    @staticmethod
+    def _log(trace: dict, session_id: str | None) -> None:
+        stages = " ".join(f"{name}={seconds}" for name, seconds in trace["timings"].items() if name != "total")
+        logger.info("turn session=%s intents=%s total=%.2fs cost_usd=%.5f llm_calls=%d stages=[%s]",
+                    (session_id or "-")[:8], (trace.get("parsed") or {}).get("intents"), trace["seconds"],
+                    trace["cost_usd"], len(trace["steps"]), stages)
+        if trace.get("blocked"):
+            logger.warning("turn blocked session=%s reason=%s", (session_id or "-")[:8], trace["blocked"])
+        if trace.get("output_violations"):
+            logger.warning("output guardrail replaced the answer session=%s violations=%s",
+                           (session_id or "-")[:8], trace["output_violations"])
 
     def _blocked(self, trace: dict, reason: str) -> TurnResult:
         trace["blocked"] = reason
         return TurnResult(self.policy.replies.blocked)
 
     def _handle(self, message: str, session: SessionState, trace: dict) -> TurnResult:
-        checked = check_input(message, session, self.policy)
+        with _stage(trace, "input_guardrail", as_type="guardrail") as stage:
+            checked = check_input(message, session, self.policy)
+            update(stage, output={"allowed": checked.allowed, "flags": checked.flags})
         trace["input_flags"] = checked.flags
         if not checked.allowed:
             trace["blocked"] = checked.flags[0]
             return TurnResult(checked.reply)
         text = checked.text
+        trace["masked_message"] = text
         history = _history_text(session, self.settings.history_turns)
         tags = Delimiter()
 
         try:
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                verdict_future = pool.submit(self.llm.structured, "guardrail", tags.system(prompts.GUARDRAIL),
-                                             tags.block("message", text), GuardrailVerdict)
-                parsed_future = pool.submit(self.llm.structured, "parser", tags.system(prompts.PARSER),
-                                            tags.block("history", history) + "\n" + tags.block("message", text),
-                                            ParsedRequest)
+            with _stage(trace, "guardrail_and_parser"), ThreadPoolExecutor(max_workers=2) as pool:
+                verdict_future = _submit(pool, self.llm.structured, "guardrail", tags.system(prompts.GUARDRAIL),
+                                         tags.block("message", text), GuardrailVerdict)
+                parsed_future = _submit(pool, self.llm.structured, "parser", tags.system(prompts.PARSER),
+                                        tags.block("history", history) + "\n" + tags.block("message", text),
+                                        ParsedRequest)
                 verdict, verdict_call = verdict_future.result()
                 parsed, parsed_call = parsed_future.result()
         except LLMUnavailable as error:
@@ -114,11 +157,11 @@ class Orchestrator:
             with ThreadPoolExecutor(max_workers=3) as pool:
                 futures = {}
                 if "data" in capabilities:
-                    futures["data"] = pool.submit(self.data_agent, self.llm, question)
+                    futures["data"] = _submit(pool, self._run_data_agent, trace, question)
                 if "policies" in capabilities:
-                    futures["policies"] = pool.submit(self.policy_search, question, 3)
+                    futures["policies"] = _submit(pool, self._run_policy_search, trace, question)
                 if "order" in capabilities:
-                    futures["order"] = pool.submit(self._order_lookup, parsed, session)
+                    futures["order"] = _submit(pool, self._run_order_lookup, trace, parsed, session)
                 results = {name: future.result() for name, future in futures.items()}
         except LLMUnavailable as error:
             trace["error"] = str(error)
@@ -131,7 +174,8 @@ class Orchestrator:
             context["catalog"] = {"summary": data.summary, "tool_results": data.tool_results}
             evidence.append(data.tool_results)
             trace["steps"].append(asdict(data.call))
-            trace["tools"] = [{"tool": t["tool"], "args": t["args"]} for t in data.tool_results]
+            trace["tools"] = [{"tool": t["tool"], "args": t["args"], "seconds": t.get("seconds")}
+                              for t in data.tool_results]
         if "policies" in results:
             sections = results["policies"]
             context["policies"] = [
@@ -154,19 +198,38 @@ class Orchestrator:
             tags.block("context", _json(context)),
         ])
         try:
-            composed, composer_call = self.llm.structured("composer", tags.system(prompts.COMPOSER), composer_input,
-                                                          ComposedAnswer)
+            with _stage(trace, "composer"):
+                composed, composer_call = self.llm.structured("composer", tags.system(prompts.COMPOSER),
+                                                              composer_input, ComposedAnswer)
         except LLMUnavailable as error:
             trace["error"] = str(error)
             return TurnResult(self.policy.replies.unsupported_answer)
         trace["steps"].append(asdict(composer_call))
 
-        # 5. Deterministic output guardrail
-        checked_output = check_output(composed.answer, evidence, composed.cited_sections, retrieved_sections,
-                                      self.policy)
+        with _stage(trace, "output_guardrail", as_type="guardrail") as stage:
+            checked_output = check_output(composed.answer, evidence, composed.cited_sections, retrieved_sections,
+                                          self.policy)
+            update(stage, output={"allowed": checked_output.allowed, "violations": checked_output.violations},
+                   **({} if checked_output.allowed else {"level": "WARNING"}))
         trace["cited_sections"] = composed.cited_sections
         trace["output_violations"] = checked_output.violations
         return TurnResult(checked_output.answer)
+
+    def _run_data_agent(self, trace: dict, question: str):
+        with _stage(trace, "data_agent", as_type="agent", input=question):
+            return self.data_agent(self.llm, question)
+
+    def _run_policy_search(self, trace: dict, question: str) -> list[dict]:
+        with _stage(trace, "policy_search", as_type="retriever", input=question) as stage:
+            sections = self.policy_search(question, 3)
+            update(stage, output=[s["section_number"] for s in sections])
+            return sections
+
+    def _run_order_lookup(self, trace: dict, parsed: ParsedRequest, session: SessionState) -> dict:
+        with _stage(trace, "order_lookup", as_type="tool") as stage:
+            result = self._order_lookup(parsed, session)
+            update(stage, output={"status": result["status"]})
+            return result
 
     def _order_lookup(self, parsed: ParsedRequest, session: SessionState) -> dict:
         if parsed.order_id is None:
@@ -179,6 +242,7 @@ class Orchestrator:
         if not (email or phone):
             return {"status": "needs_credential", "order_id": parsed.order_id}
         if session.failed_order_lookups >= self.settings.max_failed_order_lookups:
+            logger.warning("order lookup limit reached order_id=%s", parsed.order_id)
             return {"status": "too_many_attempts"}
         order = self.order_lookup(parsed.order_id, email=email, phone=phone)
         if order is None:

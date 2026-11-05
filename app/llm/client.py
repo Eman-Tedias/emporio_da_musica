@@ -1,3 +1,4 @@
+import logging
 import time
 from dataclasses import dataclass
 from functools import lru_cache
@@ -5,7 +6,11 @@ from functools import lru_cache
 from pydantic import BaseModel
 
 from app.config import get_settings
+from app.llm.pricing import cost_usd
 from app.llm.providers import GeminiProvider, OpenAIProvider, Provider, ToolExecutor
+from app.observability import observe, update
+
+logger = logging.getLogger("emporio.llm")
 
 
 class LLMUnavailable(Exception):
@@ -18,6 +23,13 @@ class CallInfo:
     model: str
     seconds: float
     fallback_reason: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float | None = None
+
+
+def _trace_output(result):
+    return result.model_dump() if isinstance(result, BaseModel) else result
 
 
 @dataclass
@@ -31,27 +43,41 @@ class LLMClient:
     def provider_name(model: str) -> str:
         return "gemini" if model.startswith("gemini") else "openai"
 
-    def _with_fallback(self, role: str, run):
+    def _with_fallback(self, role: str, system: str, user: str, run):
         primary, fallback = self.routes[role]
         reason = None
         for model in (primary, fallback):
             start = time.perf_counter()
-            try:
-                result = run(self.providers[self.provider_name(model)], model)
-            except Exception as error:
-                reason = f"{model}: {type(error).__name__}: {str(error)[:200]}"
-                continue
-            return result, CallInfo(role, model, round(time.perf_counter() - start, 2),
-                                    reason if model == fallback else None)
+            with observe(role, as_type="generation", model=model, input={"system": system, "user": user},
+                         metadata={"attempt": "primary" if model == primary else "fallback"}) as generation:
+                try:
+                    result, usage = run(self.providers[self.provider_name(model)], model)
+                except Exception as error:
+                    seconds = time.perf_counter() - start
+                    reason = f"{model}: {type(error).__name__}: {str(error)[:200]}"
+                    update(generation, level="ERROR", status_message=reason)
+                    logger.warning("llm call failed role=%s model=%s seconds=%.2f error=%s",
+                                   role, model, seconds, type(error).__name__)
+                    continue
+                cost = cost_usd(model, usage.input_tokens, usage.output_tokens)
+                update(generation, output=_trace_output(result), cost_details=cost,
+                       usage_details={"input": usage.input_tokens, "output": usage.output_tokens})
+            info = CallInfo(role, model, round(time.perf_counter() - start, 2),
+                            reason if model == fallback else None, usage.input_tokens, usage.output_tokens,
+                            round(cost["total"], 6) if cost else None)
+            if info.fallback_reason:
+                logger.warning("llm fallback role=%s model=%s seconds=%.2f", role, model, info.seconds)
+            return result, info
+        logger.error("llm unavailable role=%s", role)
         raise LLMUnavailable(f"{role}: every model failed ({reason})")
 
     def structured(self, role: str, system: str, user: str, schema: type[BaseModel]) -> tuple[BaseModel, CallInfo]:
-        return self._with_fallback(role, lambda provider, model: provider.structured(
+        return self._with_fallback(role, system, user, lambda provider, model: provider.structured(
             model, system, user, schema, self.max_tokens[role]))
 
     def tool_loop(self, role: str, system: str, user: str, tools: list[dict],
                   execute: ToolExecutor) -> tuple[str, CallInfo]:
-        return self._with_fallback(role, lambda provider, model: provider.tool_loop(
+        return self._with_fallback(role, system, user, lambda provider, model: provider.tool_loop(
             model, system, user, tools, execute, self.max_tool_steps, self.max_tokens[role]))
 
 

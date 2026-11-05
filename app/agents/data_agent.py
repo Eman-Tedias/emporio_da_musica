@@ -1,3 +1,5 @@
+import logging
+import time
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal
 
@@ -7,8 +9,11 @@ from app.agents.prompts import DATA_AGENT
 from app.agents.delimiters import Delimiter
 from app.calculators.rules import shipping_quote, simulate_installments
 from app.llm.client import CallInfo, LLMClient
+from app.observability import observe, update
 from app.tools.calculate import calculate
 from app.tools.catalog import get_product, list_active_promotions, list_categories, search_products
+
+logger = logging.getLogger("emporio.data_agent")
 
 class StrictArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -96,12 +101,17 @@ def execute_tool(name: str, raw_args: dict, log: list[dict]) -> dict:
     if name not in TOOLS:
         return {"error": f"unknown tool {name}"}
     model, run = TOOLS[name]
-    try:
-        args = model(**raw_args)
-        result = _to_dict(run(args))
-    except (ValidationError, ValueError) as error:
-        result = {"error": str(error)[:300]}
-    log.append({"tool": name, "args": raw_args, "result": result})
+    start = time.perf_counter()
+    with observe(name, as_type="tool", input=raw_args) as tool:
+        try:
+            args = model(**raw_args)
+            result = _to_dict(run(args))
+        except (ValidationError, ValueError) as error:
+            result = {"error": str(error)[:300]}
+        update(tool, output=result, **({"level": "WARNING"} if "error" in result else {}))
+    seconds = round(time.perf_counter() - start, 3)
+    logger.debug("tool name=%s seconds=%.3f error=%s", name, seconds, "error" in result)
+    log.append({"tool": name, "args": raw_args, "result": result, "seconds": seconds})
     return result if isinstance(result, dict) else {"items": result}
 
 

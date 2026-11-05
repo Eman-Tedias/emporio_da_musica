@@ -1,4 +1,8 @@
+import os
 from pathlib import Path
+
+# Tests must not send traces to the Langfuse account configured in .env
+os.environ["LANGFUSE_ENABLED"] = "false"
 
 import psycopg
 import pytest
