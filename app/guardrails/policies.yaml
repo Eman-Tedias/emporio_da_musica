@@ -1,0 +1,39 @@
+max_message_length: 1000
+
+injection_patterns:
+  - 'ignor\w*\s+(as\s+|todas\s+as\s+|suas\s+|all\s+|the\s+|previous\s+|your\s+)*(instruc|regras|orientac|instructions|rules)'
+  - 'esquec\w*\s+(as\s+|todas\s+as\s+|suas\s+)*(instruc|regras)'
+  - '(system|developer)\s*prompt'
+  - 'prompt\s+(do|de)\s+sistema'
+  - '(revele|mostre|repita|imprima|reveal|show|print)\s+(\w+\s+){0,2}(prompt|instruc|instructions)'
+  - '(finja|aja\s+como|pretend|act\s+as)'
+  - 'modo\s+(desenvolvedor|dev|deus)|developer\s+mode|jailbreak'
+  - '</?\s*(system|assistant|instructions?)\s*>'
+
+accessory_terms:
+  - corda
+  - cordas
+  - palheta
+  - palhetas
+  - cabo
+  - cabos
+  - pedal
+  - pedais
+  - amplificador
+  - amplificadores
+  - case
+  - cases
+  - afinador
+  - afinadores
+
+store_phones:
+  - '6733414444'
+  - '6733214500'
+store_emails:
+  - contato@emporiodamusica.com.br
+  - contato@empóriodamusica.com.br
+
+replies:
+  blocked: 'Posso te ajudar com produtos, pedidos e políticas da Empório da Música. Como posso ajudar?'
+  too_long: 'Sua mensagem ficou um pouco longa. Pode resumir em poucas linhas o que você precisa?'
+  unsupported_answer: 'Não consegui confirmar essa informação no nosso sistema agora. Quer que eu te passe para um atendente?'
