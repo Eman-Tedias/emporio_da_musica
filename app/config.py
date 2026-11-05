@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     max_tool_steps: int = 5
     max_failed_order_lookups: int = 3
     history_turns: int = 6
+    max_messages_per_minute: int = 20
+    session_idle_ttl_seconds: int = 3600
+    trace_file: str = "logs/traces.jsonl"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     data_dir: Path = Path("data")
 
